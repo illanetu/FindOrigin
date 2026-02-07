@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { TelegramUpdate, sendTelegramMessage, getTelegramPostContent } from '@/lib/telegram';
 import { extractData, cleanText, normalizeDate } from '@/lib/text-extraction';
 
+// Настройка runtime для Vercel (nodejs для полной поддержки всех API)
+export const runtime = 'nodejs';
+
 /**
  * POST /api/webhook
  * Обработчик webhook от Telegram
