@@ -1,6 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { TelegramUpdate, sendTelegramMessage, getTelegramPostContent } from '@/lib/telegram';
 import { searchMultipleCategories } from '@/lib/google-search';
+import { searchWithBrave } from '@/lib/brave-search';
+import { searchWithWikipedia } from '@/lib/wikipedia-search';
+import { searchWithSearch1API } from '@/lib/search1api-search';
 import { generateSearchQuery, compareWithSources, formatAnalysisResponse } from '@/lib/openai';
 
 export const config = {
@@ -65,19 +68,17 @@ async function processUpdate(update: TelegramUpdate, token: string): Promise<voi
 
   let text = message.text.trim();
 
+  const search1ApiKey = process.env.SEARCH1API_KEY;
   const googleApiKey = process.env.GOOGLE_SEARCH_API_KEY;
   const googleSearchEngineId = process.env.GOOGLE_SEARCH_ENGINE_ID;
+  const braveApiKey = process.env.BRAVE_API_KEY;
   const openaiApiKey = process.env.OPENAI_API_KEY;
   const openrouterApiKey = process.env.OPENROUTER_API_KEY;
 
-  if (!googleApiKey || !googleSearchEngineId) {
-    await sendTelegramMessage(
-      chatId,
-      '❌ Ошибка: Google Search API не настроен. Проверьте переменные окружения GOOGLE_SEARCH_API_KEY и GOOGLE_SEARCH_ENGINE_ID.',
-      token
-    );
-    return;
-  }
+  const useSearch1API = !!search1ApiKey;
+  const useGoogleSearch = !!googleApiKey && !!googleSearchEngineId;
+  const useBraveSearch = !!braveApiKey;
+  // Если ни один ключ не задан — используется Википедия (без ключа, работает в РФ)
 
   const aiApiKey = openrouterApiKey || openaiApiKey;
   const useOpenRouter = !!openrouterApiKey;
@@ -124,28 +125,31 @@ async function processUpdate(update: TelegramUpdate, token: string): Promise<voi
   try {
     const searchQuery = await generateSearchQuery(text, aiApiKey, useOpenRouter);
 
-    // Шаг 2: только потом Google Search
-    await sendTelegramMessage(
-      chatId,
-      '🔍 Ищу источники в Google...',
-      token
-    );
-
-    // ВРЕМЕННО: поиск Google отключён для проверки (включить обратно — GOOGLE_SEARCH_DISABLED = false)
-    const GOOGLE_SEARCH_DISABLED = true;
-    const searchResults = GOOGLE_SEARCH_DISABLED
-      ? { official: [], news: [], blog: [], research: [] }
-      : await searchMultipleCategories(
-          searchQuery,
-          googleApiKey,
-          googleSearchEngineId
-        );
-    const allSources = [
-      ...searchResults.official,
-      ...searchResults.news,
-      ...searchResults.blog,
-      ...searchResults.research,
+    // Шаг 2: поиск — сначала всегда Википедия, затем при наличии ключа — другой провайдер
+    await sendTelegramMessage(chatId, '🔍 Ищу источники в Википедии...', token);
+    const wikiResults = await searchWithWikipedia(searchQuery, 5);
+    let allSources = [
+      ...wikiResults.official,
+      ...wikiResults.news,
+      ...wikiResults.blog,
+      ...wikiResults.research,
     ];
+
+    if (useSearch1API || useGoogleSearch || useBraveSearch) {
+      if (useSearch1API) {
+        await sendTelegramMessage(chatId, '🔍 Ищу также в DuckDuckGo...', token);
+        const other = await searchWithSearch1API(searchQuery, search1ApiKey!, 5);
+        allSources = [...allSources, ...other.news, ...other.blog, ...other.research];
+      } else if (useGoogleSearch) {
+        await sendTelegramMessage(chatId, '🔍 Ищу также в Google...', token);
+        const other = await searchMultipleCategories(searchQuery, googleApiKey!, googleSearchEngineId!);
+        allSources = [...allSources, ...other.news, ...other.blog, ...other.research];
+      } else {
+        await sendTelegramMessage(chatId, '🔍 Ищу также в Brave Search...', token);
+        const other = await searchWithBrave(searchQuery, braveApiKey!, 5);
+        allSources = [...allSources, ...other.news, ...other.blog, ...other.research];
+      }
+    }
 
     if (allSources.length === 0) {
       await sendTelegramMessage(
@@ -170,8 +174,11 @@ async function processUpdate(update: TelegramUpdate, token: string): Promise<voi
     console.error('Error processing update:', error);
     const errMsg = error instanceof Error ? error.message : String(error);
     let userMsg = '❌ Произошла ошибка при поиске или анализе источников. Попробуйте позже.';
-    if (/Google Search API|403|401|invalid|quota|API key|customsearch/i.test(errMsg)) {
-      userMsg += '\n\n💡 Поиск (Google): проверьте GOOGLE_SEARCH_API_KEY и GOOGLE_SEARCH_ENGINE_ID в Vercel. Custom Search API должен быть включён в Google Cloud.';
+    if (/Google Search API|Brave Search API|Search1API|Wikipedia API|customsearch|403|401|invalid|quota|API key/i.test(errMsg)) {
+      if (useSearch1API) userMsg += '\n\n💡 Поиск (Search1API/DuckDuckGo): проверьте SEARCH1API_KEY в Vercel. Ключ: search1api.com';
+      else if (useGoogleSearch) userMsg += '\n\n💡 Поиск (Google): проверьте GOOGLE_SEARCH_API_KEY и GOOGLE_SEARCH_ENGINE_ID в Vercel.';
+      else if (useBraveSearch) userMsg += '\n\n💡 Поиск (Brave): проверьте BRAVE_API_KEY в Vercel. В РФ Brave может быть недоступен.';
+      else userMsg += '\n\n💡 Поиск (Википедия): ошибка сети или Википедия недоступна.';
     } else if (/openai|openrouter|gpt|rate limit|insufficient_quota/i.test(errMsg)) {
       userMsg += '\n\n💡 AI (OpenRouter/OpenAI): проверьте OPENROUTER_API_KEY или OPENAI_API_KEY в Vercel. Модель: openai/gpt-4o-mini.';
     }
