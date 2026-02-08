@@ -6,15 +6,25 @@ import { compareWithSources, formatAnalysisResponse } from '@/lib/openai';
 // Настройка runtime для Vercel (nodejs для полной поддержки всех API)
 export const runtime = 'nodejs';
 
-// Отключаем body parsing для raw body (если нужно)
+// Принудительно делаем route динамическим
 export const dynamic = 'force-dynamic';
+
+// Отключаем кэширование
+export const revalidate = 0;
 
 /**
  * OPTIONS /api/webhook
  * Обработка preflight запросов
  */
 export async function OPTIONS() {
-  return NextResponse.json({}, { status: 200 });
+  return new NextResponse(null, { 
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    },
+  });
 }
 
 /**
@@ -34,14 +44,29 @@ export async function POST(request: NextRequest) {
     }
 
     // Быстро возвращаем 200 OK, чтобы Telegram не повторял запрос
-    const update: TelegramUpdate = await request.json();
+    let update: TelegramUpdate;
+    try {
+      update = await request.json();
+    } catch (parseError) {
+      console.error('Error parsing request body:', parseError);
+      return NextResponse.json(
+        { error: 'Invalid request body' },
+        { status: 400 }
+      );
+    }
     
     // Обрабатываем асинхронно, не блокируя ответ
     processUpdate(update, token).catch(error => {
       console.error('Error processing update:', error);
     });
 
-    return NextResponse.json({ ok: true }, { status: 200 });
+    // Возвращаем успешный ответ сразу
+    return new NextResponse(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
   } catch (error) {
     console.error('Webhook error:', error);
     return NextResponse.json(
