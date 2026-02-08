@@ -76,7 +76,8 @@ async function processUpdate(update: TelegramUpdate, token: string): Promise<voi
   const openrouterApiKey = process.env.OPENROUTER_API_KEY;
 
   const useSearch1API = !!search1ApiKey;
-  const useGoogleSearch = !!googleApiKey && !!googleSearchEngineId;
+  const GOOGLE_SEARCH_DISABLED = true; // Временно отключить Google (включить: false)
+  const useGoogleSearch = !!googleApiKey && !!googleSearchEngineId && !GOOGLE_SEARCH_DISABLED;
   const useBraveSearch = !!braveApiKey;
   // Если ни один ключ не задан — используется Википедия (без ключа, работает в РФ)
 
