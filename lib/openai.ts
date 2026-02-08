@@ -52,6 +52,40 @@ export function createOpenAIClient(apiKey: string, useOpenRouter: boolean = fals
 }
 
 /**
+ * Шаг 1: AI (gpt-4o-mini) формирует поисковый запрос по тексту пользователя
+ */
+export async function generateSearchQuery(
+  userText: string,
+  apiKey: string,
+  useOpenRouter: boolean = false
+): Promise<string> {
+  const client = createOpenAIClient(apiKey, useOpenRouter);
+  const model = useOpenRouter ? 'openai/gpt-4o-mini' : 'gpt-4o-mini';
+
+  const completion = await client.chat.completions.create({
+    model,
+    messages: [
+      {
+        role: 'system',
+        content: 'Ты помощник по формированию поисковых запросов. По тексту пользователя составь один короткий поисковый запрос (3–8 слов) для поиска источников в новостях и статьях. Верни только сам запрос, без кавычек и пояснений.',
+      },
+      {
+        role: 'user',
+        content: userText,
+      },
+    ],
+    temperature: 0.3,
+    max_tokens: 100,
+  });
+
+  const query = completion.choices[0]?.message?.content?.trim();
+  if (!query) {
+    return userText.slice(0, 200);
+  }
+  return query;
+}
+
+/**
  * Сравнение смысла исходного текста с найденными источниками
  */
 export async function compareWithSources(

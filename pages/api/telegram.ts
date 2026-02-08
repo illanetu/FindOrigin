@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { TelegramUpdate, sendTelegramMessage, getTelegramPostContent } from '@/lib/telegram';
 import { searchMultipleCategories } from '@/lib/google-search';
-import { compareWithSources, formatAnalysisResponse } from '@/lib/openai';
+import { generateSearchQuery, compareWithSources, formatAnalysisResponse } from '@/lib/openai';
 
 export const config = {
   api: { bodyParser: { sizeLimit: '1mb' } },
@@ -116,13 +116,21 @@ async function processUpdate(update: TelegramUpdate, token: string): Promise<voi
 
   await sendTelegramMessage(
     chatId,
-    '🔍 Ищу источники информации... Это может занять некоторое время.',
+    '🤖 AI (gpt-4o-mini) формирует поисковый запрос...',
     token
   );
 
   try {
+    const searchQuery = await generateSearchQuery(text, aiApiKey, useOpenRouter);
+
+    await sendTelegramMessage(
+      chatId,
+      '🔍 Ищу источники информации... Это может занять некоторое время.',
+      token
+    );
+
     const searchResults = await searchMultipleCategories(
-      text,
+      searchQuery,
       googleApiKey,
       googleSearchEngineId
     );
