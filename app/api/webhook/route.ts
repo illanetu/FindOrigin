@@ -57,6 +57,7 @@ async function processUpdate(update: TelegramUpdate, token: string): Promise<voi
   const googleApiKey = process.env.GOOGLE_SEARCH_API_KEY;
   const googleSearchEngineId = process.env.GOOGLE_SEARCH_ENGINE_ID;
   const openaiApiKey = process.env.OPENAI_API_KEY;
+  const openrouterApiKey = process.env.OPENROUTER_API_KEY;
 
   if (!googleApiKey || !googleSearchEngineId) {
     await sendTelegramMessage(
@@ -67,10 +68,14 @@ async function processUpdate(update: TelegramUpdate, token: string): Promise<voi
     return;
   }
 
-  if (!openaiApiKey) {
+  // Поддерживаем либо OpenAI, либо OpenRouter
+  const aiApiKey = openrouterApiKey || openaiApiKey;
+  const useOpenRouter = !!openrouterApiKey;
+
+  if (!aiApiKey) {
     await sendTelegramMessage(
       chatId,
-      '❌ Ошибка: OpenAI API не настроен. Проверьте переменную окружения OPENAI_API_KEY.',
+      '❌ Ошибка: AI API не настроен. Проверьте переменную окружения OPENAI_API_KEY или OPENROUTER_API_KEY.',
       token
     );
     return;
@@ -146,7 +151,7 @@ async function processUpdate(update: TelegramUpdate, token: string): Promise<voi
       token
     );
 
-    const analysis = await compareWithSources(text, sourcesToAnalyze, openaiApiKey);
+    const analysis = await compareWithSources(text, sourcesToAnalyze, aiApiKey, useOpenRouter);
 
     // Формируем и отправляем финальный ответ
     const responseText = formatAnalysisResponse(analysis);

@@ -19,12 +19,36 @@ export interface AnalysisResult {
 }
 
 /**
- * Инициализация клиента OpenAI
+ * Инициализация клиента OpenAI или OpenRouter
  */
-export function createOpenAIClient(apiKey: string): OpenAI {
-  return new OpenAI({
+export function createOpenAIClient(apiKey: string, useOpenRouter: boolean = false): OpenAI {
+  const config: any = {
     apiKey: apiKey,
-  });
+  };
+
+  // Если указан OPENAI_BASE_URL, используем его (для OpenRouter или других провайдеров)
+  const baseURL = process.env.OPENAI_BASE_URL;
+  if (baseURL) {
+    config.baseURL = baseURL;
+    // Если используется OpenRouter, добавляем необходимые заголовки
+    if (baseURL.includes('openrouter.ai')) {
+      const referer = process.env.OPENROUTER_HTTP_REFERER || 'https://github.com/illanetu/FindOrigin';
+      config.defaultHeaders = {
+        'HTTP-Referer': referer,
+        'X-Title': 'FindOrigin Bot',
+      };
+    }
+  } else if (useOpenRouter) {
+    // Если используется OpenRouter без OPENAI_BASE_URL, используем стандартный URL
+    config.baseURL = 'https://openrouter.ai/api/v1';
+    const referer = process.env.OPENROUTER_HTTP_REFERER || 'https://github.com/illanetu/FindOrigin';
+    config.defaultHeaders = {
+      'HTTP-Referer': referer,
+      'X-Title': 'FindOrigin Bot',
+    };
+  }
+
+  return new OpenAI(config);
 }
 
 /**
@@ -33,9 +57,10 @@ export function createOpenAIClient(apiKey: string): OpenAI {
 export async function compareWithSources(
   originalText: string,
   sources: Array<{ title: string; link: string; snippet: string }>,
-  apiKey: string
+  apiKey: string,
+  useOpenRouter: boolean = false
 ): Promise<AnalysisResult> {
-  const client = createOpenAIClient(apiKey);
+  const client = createOpenAIClient(apiKey, useOpenRouter);
 
   // Формируем промпт для анализа
   const sourcesText = sources
@@ -79,8 +104,11 @@ ${sourcesText}
 Важно: Анализируй семантическое сходство, а не буквальное совпадение текста.`;
 
   try {
+    // OpenRouter использует формат "openai/gpt-4o-mini", но также поддерживает "gpt-4o-mini"
+    const model = useOpenRouter ? 'openai/gpt-4o-mini' : 'gpt-4o-mini';
+    
     const completion = await client.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: model,
       messages: [
         {
           role: 'system',
