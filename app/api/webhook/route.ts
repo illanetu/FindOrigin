@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TelegramUpdate, sendTelegramMessage, getTelegramPostContent } from '@/lib/telegram';
-import { extractData, cleanText, normalizeDate } from '@/lib/text-extraction';
+import { searchSources, searchMultipleCategories } from '@/lib/google-search';
+import { compareWithSources, formatAnalysisResponse } from '@/lib/openai';
 
 // Настройка runtime для Vercel (nodejs для полной поддержки всех API)
 export const runtime = 'nodejs';
@@ -50,7 +51,30 @@ async function processUpdate(update: TelegramUpdate, token: string): Promise<voi
   }
 
   const chatId = message.chat.id;
-  let text = message.text;
+  let text = message.text.trim();
+
+  // Проверяем наличие необходимых API ключей
+  const googleApiKey = process.env.GOOGLE_SEARCH_API_KEY;
+  const googleSearchEngineId = process.env.GOOGLE_SEARCH_ENGINE_ID;
+  const openaiApiKey = process.env.OPENAI_API_KEY;
+
+  if (!googleApiKey || !googleSearchEngineId) {
+    await sendTelegramMessage(
+      chatId,
+      '❌ Ошибка: Google Search API не настроен. Проверьте переменные окружения GOOGLE_SEARCH_API_KEY и GOOGLE_SEARCH_ENGINE_ID.',
+      token
+    );
+    return;
+  }
+
+  if (!openaiApiKey) {
+    await sendTelegramMessage(
+      chatId,
+      '❌ Ошибка: OpenAI API не настроен. Проверьте переменную окружения OPENAI_API_KEY.',
+      token
+    );
+    return;
+  }
 
   // Проверяем, является ли сообщение ссылкой на Telegram-пост
   const telegramLinkPattern = /https?:\/\/t\.me\/[^\s]+/;
@@ -62,64 +86,77 @@ async function processUpdate(update: TelegramUpdate, token: string): Promise<voi
     if (postContent) {
       text = postContent;
     } else {
-      // Если не удалось извлечь, используем исходный текст
+      // Если не удалось извлечь, отправляем сообщение
       await sendTelegramMessage(
         chatId,
-        'Получена ссылка на Telegram-пост. Обработка ссылок на посты будет реализована позже.',
+        '⚠️ Получена ссылка на Telegram-пост, но не удалось извлечь его содержимое. Обрабатываю ссылку как обычный текст.',
+        token
+      );
+    }
+  }
+
+  if (!text || text.length < 10) {
+    await sendTelegramMessage(
+      chatId,
+      '❌ Текст слишком короткий для анализа. Пожалуйста, отправьте более подробное сообщение.',
+      token
+    );
+    return;
+  }
+
+  // Отправляем сообщение о начале обработки
+  await sendTelegramMessage(
+    chatId,
+    '🔍 Ищу источники информации... Это может занять некоторое время.',
+    token
+  );
+
+  try {
+    // Ищем источники по разным категориям
+    const searchResults = await searchMultipleCategories(
+      text,
+      googleApiKey,
+      googleSearchEngineId
+    );
+
+    // Объединяем результаты из всех категорий
+    const allSources = [
+      ...searchResults.official,
+      ...searchResults.news,
+      ...searchResults.blog,
+      ...searchResults.research,
+    ];
+
+    if (allSources.length === 0) {
+      await sendTelegramMessage(
+        chatId,
+        '❌ Источники не найдены. Попробуйте переформулировать запрос.',
         token
       );
       return;
     }
+
+    // Ограничиваем количество источников для анализа (максимум 5)
+    const sourcesToAnalyze = allSources.slice(0, 5);
+
+    // Анализируем источники с помощью AI
+    await sendTelegramMessage(
+      chatId,
+      '🤖 Анализирую найденные источники с помощью AI...',
+      token
+    );
+
+    const analysis = await compareWithSources(text, sourcesToAnalyze, openaiApiKey);
+
+    // Формируем и отправляем финальный ответ
+    const responseText = formatAnalysisResponse(analysis);
+    await sendTelegramMessage(chatId, responseText, token);
+  } catch (error) {
+    console.error('Error processing update:', error);
+    await sendTelegramMessage(
+      chatId,
+      '❌ Произошла ошибка при поиске или анализе источников. Попробуйте позже.',
+      token
+    );
   }
-
-  // Очищаем текст
-  const cleanedText = cleanText(text);
-
-  // Извлекаем данные из текста
-  const extractedData = extractData(cleanedText);
-
-  // Нормализуем даты
-  const normalizedDates = extractedData.dates.map(normalizeDate);
-
-  // Формируем ответ пользователю
-  let responseText = '📋 Извлеченные данные из текста:\n\n';
-  
-  if (extractedData.keyStatements.length > 0) {
-    responseText += '🔑 Ключевые утверждения:\n';
-    extractedData.keyStatements.slice(0, 3).forEach((stmt, idx) => {
-      responseText += `${idx + 1}. ${stmt}\n`;
-    });
-    responseText += '\n';
-  }
-
-  if (normalizedDates.length > 0) {
-    responseText += `📅 Даты: ${normalizedDates.join(', ')}\n\n`;
-  }
-
-  if (extractedData.numbers.length > 0) {
-    responseText += `🔢 Числа: ${extractedData.numbers.slice(0, 5).join(', ')}\n\n`;
-  }
-
-  if (extractedData.names.length > 0) {
-    responseText += `👤 Имена: ${extractedData.names.slice(0, 5).join(', ')}\n\n`;
-  }
-
-  if (extractedData.links.length > 0) {
-    responseText += `🔗 Ссылки: ${extractedData.links.join(', ')}\n\n`;
-  }
-
-  if (
-    extractedData.keyStatements.length === 0 &&
-    normalizedDates.length === 0 &&
-    extractedData.numbers.length === 0 &&
-    extractedData.names.length === 0 &&
-    extractedData.links.length === 0
-  ) {
-    responseText = 'Не удалось извлечь структурированные данные из текста.';
-  }
-
-  responseText += '\n⏳ Поиск источников будет реализован на следующем этапе.';
-
-  // Отправляем ответ
-  await sendTelegramMessage(chatId, responseText, token);
 }
