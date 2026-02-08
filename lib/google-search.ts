@@ -51,37 +51,21 @@ export async function searchSources(
 }
 
 /**
- * Поиск источников по категориям
+ * Поиск по запросу без site: — для бесплатного Programmable Search Engine
+ * (поиск только по тем сайтам, что добавлены в настройках ПСМ, до 50 шт.)
  */
 export async function searchByCategory(
   query: string,
   apiKey: string,
   searchEngineId: string,
-  category: 'official' | 'news' | 'blog' | 'research' = 'news'
+  _category: 'official' | 'news' | 'blog' | 'research' = 'news'
 ): Promise<SearchResult[]> {
-  // Добавляем модификаторы запроса в зависимости от категории
-  let modifiedQuery = query;
-  
-  switch (category) {
-    case 'official':
-      modifiedQuery = `${query} site:gov.ru OR site:gov OR site:org`;
-      break;
-    case 'news':
-      modifiedQuery = `${query} site:ria.ru OR site:rbc.ru OR site:tass.ru OR site:interfax.ru OR site:lenta.ru`;
-      break;
-    case 'blog':
-      modifiedQuery = `${query} site:habr.com OR site:vc.ru OR site:dtf.ru`;
-      break;
-    case 'research':
-      modifiedQuery = `${query} site:scholar.google.com OR site:arxiv.org OR site:pubmed.ncbi.nlm.nih.gov`;
-      break;
-  }
-
-  return searchSources(modifiedQuery, apiKey, searchEngineId, 3);
+  return searchSources(query, apiKey, searchEngineId, 3);
 }
 
 /**
- * Поиск источников по нескольким категориям
+ * Поиск источников. Один запрос к API по вашему списку сайтов (до 50 в бесплатной версии).
+ * Модификаторы site: не используются — учитываются только сайты из настроек поисковой системы.
  */
 export async function searchMultipleCategories(
   query: string,
@@ -93,12 +77,11 @@ export async function searchMultipleCategories(
   blog: SearchResult[];
   research: SearchResult[];
 }> {
-  const [official, news, blog, research] = await Promise.all([
-    searchByCategory(query, apiKey, searchEngineId, 'official').catch(() => []),
-    searchByCategory(query, apiKey, searchEngineId, 'news').catch(() => []),
-    searchByCategory(query, apiKey, searchEngineId, 'blog').catch(() => []),
-    searchByCategory(query, apiKey, searchEngineId, 'research').catch(() => []),
-  ]);
-
-  return { official, news, blog, research };
+  const items = await searchSources(query, apiKey, searchEngineId, 10);
+  return {
+    official: [],
+    news: items,
+    blog: [],
+    research: [],
+  };
 }

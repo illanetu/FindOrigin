@@ -154,10 +154,11 @@ async function processUpdate(update: TelegramUpdate, token: string): Promise<voi
     await sendTelegramMessage(chatId, responseText, token);
   } catch (error) {
     console.error('Error processing update:', error);
-    await sendTelegramMessage(
-      chatId,
-      '❌ Произошла ошибка при поиске или анализе источников. Попробуйте позже.',
-      token
-    );
+    const errMsg = error instanceof Error ? error.message : String(error);
+    let userMsg = '❌ Произошла ошибка при поиске или анализе источников. Попробуйте позже.';
+    if (/Google Search API|403|401|invalid|quota|API key/i.test(errMsg)) {
+      userMsg += '\n\n💡 Проверьте в Vercel: GOOGLE_SEARCH_API_KEY и GOOGLE_SEARCH_ENGINE_ID (Programmable Search Engine). Ключ и ID должны быть от одного проекта.';
+    }
+    await sendTelegramMessage(chatId, userMsg, token);
   }
 }

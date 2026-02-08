@@ -30,16 +30,22 @@ if ($envFile) {
 }
 Write-Host ""
 
-# 2. Проверка webhook
+# 2. Проверка webhook (и последней ошибки от Telegram!)
 Write-Host "2. Проверка webhook..." -ForegroundColor Yellow
 if ($token) {
     try {
         $webhookInfo = Invoke-RestMethod -Uri "https://api.telegram.org/bot$token/getWebhookInfo" -ErrorAction Stop
         if ($webhookInfo.ok) {
-            Write-Host "   URL: $($webhookInfo.result.url)" -ForegroundColor Green
-            Write-Host "   Ожидающие обновления: $($webhookInfo.result.pending_update_count)" -ForegroundColor $(if ($webhookInfo.result.pending_update_count -gt 0) { "Yellow" } else { "Green" })
-            
-            if ($webhookInfo.result.pending_update_count -gt 0) {
+            $r = $webhookInfo.result
+            Write-Host "   URL: $($r.url)" -ForegroundColor Green
+            Write-Host "   Ожидающие обновления: $($r.pending_update_count)" -ForegroundColor $(if ($r.pending_update_count -gt 0) { "Yellow" } else { "Green" })
+            if ($r.last_error_message) {
+                Write-Host "   ПОСЛЕДНЯЯ ОШИБКА ОТ TELEGRAM: $($r.last_error_message)" -ForegroundColor Red
+                Write-Host "   (значит Telegram шлёт запросы, но сервер отвечает ошибкой)" -ForegroundColor Gray
+            } else {
+                Write-Host "   Последняя ошибка: нет (Telegram не сообщал об ошибках)" -ForegroundColor Green
+            }
+            if ($r.pending_update_count -gt 0) {
                 Write-Host "   ВНИМАНИЕ: Есть необработанные обновления!" -ForegroundColor Yellow
             }
         }
@@ -75,17 +81,16 @@ try {
     if ($response) {
         Write-Host "   Сервер доступен" -ForegroundColor Green
         
-        # Проверка endpoint
+        # Проверка POST к /api/telegram (рекомендуемый webhook)
         try {
-            $testBody = @{test=$true} | ConvertTo-Json
-            $webResponse = Invoke-WebRequest -Uri "$vercelUrl/api/webhook" -Method POST -ContentType "application/json" -Body $testBody -UseBasicParsing -ErrorAction Stop
-            Write-Host "   Endpoint отвечает (статус: $($webResponse.StatusCode))" -ForegroundColor Green
+            $testBody = '{"update_id":1,"message":{"message_id":1,"chat":{"id":123,"type":"private"},"date":1234567890,"text":"test"}}'
+            $webResponse = Invoke-WebRequest -Uri "$vercelUrl/api/telegram" -Method POST -ContentType "application/json" -Body $testBody -UseBasicParsing -ErrorAction Stop
+            Write-Host "   POST /api/telegram: $($webResponse.StatusCode) OK" -ForegroundColor Green
         } catch {
             $statusCode = $_.Exception.Response.StatusCode.value__
-            if ($statusCode -eq 200 -or $statusCode -eq 405) {
-                Write-Host "   Endpoint доступен (статус: $statusCode)" -ForegroundColor Green
-            } else {
-                Write-Host "   Endpoint вернул ошибку: $statusCode" -ForegroundColor Yellow
+            Write-Host "   POST /api/telegram: $statusCode" -ForegroundColor $(if ($statusCode -eq 405) { "Red" } else { "Yellow" })
+            if ($statusCode -eq 405) {
+                Write-Host "   Если 405 — Telegram тоже получит 405, запросы 'не доходят' в логах (Telegram перестаёт слать после ошибки)" -ForegroundColor Gray
             }
         }
     } else {
@@ -99,22 +104,13 @@ Write-Host ""
 # 5. Рекомендации
 Write-Host "5. Рекомендации:" -ForegroundColor Yellow
 Write-Host ""
-Write-Host "   Если бот не отвечает, проверьте:" -ForegroundColor White
-Write-Host "   1. Vercel Dashboard -> Settings -> Environment Variables" -ForegroundColor Cyan
-Write-Host "      Убедитесь, что все переменные добавлены для Production" -ForegroundColor Cyan
+Write-Host "   Если в логах Vercel только GET / и нет POST /api/telegram:" -ForegroundColor White
+Write-Host "   • Выше смотрите 'ПОСЛЕДНЯЯ ОШИБКА ОТ TELEGRAM' — если есть 405, ваш POST с компа тоже даёт 405, нужно чинить endpoint" -ForegroundColor Cyan
+Write-Host "   • Выше смотрите 'POST /api/telegram' — должен быть 200. Если 405: Settings -> Deployment Protection отключить для Production" -ForegroundColor Cyan
+Write-Host "   • Vercel -> Firewall: не блокировать запросы к /api/telegram" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "   2. Vercel Dashboard -> Deployments -> [последний деплой] -> Logs" -ForegroundColor Cyan
-Write-Host "      Проверьте логи на наличие ошибок" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "   3. Убедитесь, что проект успешно задеплоен:" -ForegroundColor Cyan
-Write-Host "      Vercel Dashboard -> Deployments (должен быть статус Ready)" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "   4. Проверьте переменные окружения на Vercel:" -ForegroundColor Cyan
-Write-Host "      - BOT_TOKEN" -ForegroundColor White
-Write-Host "      - GOOGLE_SEARCH_API_KEY" -ForegroundColor White
-Write-Host "      - GOOGLE_SEARCH_ENGINE_ID" -ForegroundColor White
-Write-Host "      - OPENROUTER_API_KEY (или OPENAI_API_KEY)" -ForegroundColor White
-Write-Host "      - OPENAI_BASE_URL (опционально)" -ForegroundColor White
+Write-Host "   Переменные на Vercel (Settings -> Environment Variables, Production):" -ForegroundColor White
+Write-Host "   BOT_TOKEN, GOOGLE_SEARCH_API_KEY, GOOGLE_SEARCH_ENGINE_ID, OPENROUTER_API_KEY или OPENAI_API_KEY" -ForegroundColor Cyan
 Write-Host ""
 
 Write-Host "=== Диагностика завершена ===" -ForegroundColor Cyan

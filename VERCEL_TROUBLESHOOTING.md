@@ -42,6 +42,48 @@ npm run build
 
 **Проверка с вашего ПК:** если GET к `https://ваш-проект.vercel.app/api/webhook` возвращает 200, а POST — 405, почти всегда виновата защита деплоя или фаервол проекта.
 
+### 4b. В логах Vercel только GET /, запросов к /api/telegram нет, бот молчит
+
+Это значит одно из двух: **запросы от Telegram до Vercel не доходят** или **Telegram получает ошибку и перестаёт слать**.
+
+1. **Узнайте, что видит Telegram:**  
+   `Invoke-RestMethod -Uri "https://api.telegram.org/botВАШ_ТОКЕН/getWebhookInfo" | ConvertTo-Json -Depth 5`  
+   Смотрите **`last_error_message`**. Если там есть текст (например «405 Method Not Allowed») — Telegram **доходит** до вашего URL, но сервер отвечает ошибкой. Тогда нужно чинить endpoint (см. п. 4 про Deployment Protection и POST).
+
+2. **Проверьте POST с вашего ПК:**  
+   POST к `https://ваш-проект.vercel.app/api/telegram` с телом-JSON. Если у вас 405, то и у Telegram 405 — в логах POST не будет, т.к. Telegram после ошибки не ретраит бесконечно.
+
+3. **Vercel Firewall:**  
+   В проекте: Settings → Firewall. Убедитесь, что не блокируются запросы к `/api/telegram` (или отключите правила для проверки).
+
+4. **Логи:**  
+   В Logs откройте фильтр по пути или поиск по «telegram» / «POST», чтобы не смотреть только GET.
+
+### 4c. В логах нет ни одного сообщения про telegram — проблема в Telegram?
+
+Скорее всего **не в самом Telegram**, а в том, что запросы от серверов Telegram до Vercel не доходят или блокируются.
+
+**Проверка «Telegram точно шлёт обновления»:**
+
+1. Временно снимите webhook и включите режим getUpdates — так вы убедитесь, что бот вообще получает сообщения.
+2. Настройте webhook снова и проверьте **Vercel Firewall** — часто запросы от IP Telegram блокируются.
+
+**Команды (PowerShell):**
+
+```powershell
+# 1) Снять webhook
+Invoke-RestMethod -Uri "https://api.telegram.org/botВАШ_ТОКЕН/deleteWebhook"
+
+# 2) Написать боту в Telegram одно сообщение
+
+# 3) Получить обновления вручную — если здесь есть update, значит Telegram доставляет
+Invoke-RestMethod -Uri "https://api.telegram.org/botВАШ_ТОКЕН/getUpdates" | ConvertTo-Json -Depth 10
+```
+
+Если в `getUpdates` есть ваше сообщение — **Telegram работает**, обновления есть. Тогда снова поставьте webhook и проверьте **Vercel → Settings → Firewall**: отключите правила для проверки или добавьте исключение для пути `/api/telegram`, чтобы запросы от любых IP (в т.ч. серверов Telegram) не блокировались.
+
+**Итог:** если с вашего ПК POST к `/api/telegram` возвращает 200, а в логах Vercel вызовов нет — запросы от Telegram либо блокируются (Firewall), либо не доходят до того же деплоя. Проверка через getUpdates подтверждает, что «проблема не в Telegram».
+
 ### 5. API route не отвечает или возвращает 500
 
 **Проверьте:**
