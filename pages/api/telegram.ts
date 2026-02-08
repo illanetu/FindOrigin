@@ -145,7 +145,7 @@ async function processUpdate(update: TelegramUpdate, token: string): Promise<voi
     const sourcesToAnalyze = allSources.slice(0, 5);
     await sendTelegramMessage(
       chatId,
-      '🤖 Анализирую найденные источники с помощью AI...',
+      '🤖 Анализирую найденные источники с помощью AI (gpt-4o-mini)...',
       token
     );
 
@@ -156,8 +156,10 @@ async function processUpdate(update: TelegramUpdate, token: string): Promise<voi
     console.error('Error processing update:', error);
     const errMsg = error instanceof Error ? error.message : String(error);
     let userMsg = '❌ Произошла ошибка при поиске или анализе источников. Попробуйте позже.';
-    if (/Google Search API|403|401|invalid|quota|API key/i.test(errMsg)) {
-      userMsg += '\n\n💡 Проверьте в Vercel: GOOGLE_SEARCH_API_KEY и GOOGLE_SEARCH_ENGINE_ID (Programmable Search Engine). Ключ и ID должны быть от одного проекта.';
+    if (/Google Search API|403|401|invalid|quota|API key|customsearch/i.test(errMsg)) {
+      userMsg += '\n\n💡 Поиск (Google): проверьте GOOGLE_SEARCH_API_KEY и GOOGLE_SEARCH_ENGINE_ID в Vercel. Custom Search API должен быть включён в Google Cloud.';
+    } else if (/openai|openrouter|gpt|rate limit|insufficient_quota/i.test(errMsg)) {
+      userMsg += '\n\n💡 AI (OpenRouter/OpenAI): проверьте OPENROUTER_API_KEY или OPENAI_API_KEY в Vercel. Модель: openai/gpt-4o-mini.';
     }
     await sendTelegramMessage(chatId, userMsg, token);
   }
