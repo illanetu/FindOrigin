@@ -6,6 +6,9 @@ import { compareWithSources, formatAnalysisResponse } from '@/lib/openai';
 // Настройка runtime для Vercel (nodejs для полной поддержки всех API)
 export const runtime = 'nodejs';
 
+// До 60 сек на Pro — поиск и AI могут занимать время (на Hobby лимит Vercel 10 сек)
+export const maxDuration = 60;
+
 // Принудительно делаем route динамическим
 export const dynamic = 'force-dynamic';
 
@@ -55,12 +58,10 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Обрабатываем асинхронно, не блокируя ответ
-    processUpdate(update, token).catch(error => {
-      console.error('Error processing update:', error);
-    });
+    // На Vercel serverless после return функция завершается — фоновая обработка не успевает.
+    // Поэтому ждём завершения обработки, затем возвращаем 200 (Telegram допускает до 60 сек).
+    await processUpdate(update, token);
 
-    // Возвращаем успешный ответ сразу
     return new NextResponse(JSON.stringify({ ok: true }), {
       status: 200,
       headers: {
