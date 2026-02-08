@@ -189,6 +189,8 @@ ${sourcesText}
 /**
  * Формирование финального ответа для пользователя
  */
+const MIN_RELEVANCE_PERCENT = 50;
+
 export function formatAnalysisResponse(analysis: AnalysisResult): string {
   let response = '🔍 Результаты поиска источников:\n\n';
 
@@ -196,12 +198,18 @@ export function formatAnalysisResponse(analysis: AnalysisResult): string {
     return '❌ Источники не найдены.';
   }
 
-  // Сортируем источники по релевантности
-  const sortedSources = [...analysis.sources].sort(
+  // Оставляем только источники с релевантностью не менее 50%
+  const relevantSources = analysis.sources.filter(
+    (s) => s.relevanceScore >= MIN_RELEVANCE_PERCENT
+  );
+  if (relevantSources.length === 0) {
+    return '❌ Нет источников с релевантностью не менее 50%. Попробуйте переформулировать запрос.';
+  }
+
+  // Сортируем по релевантности и показываем топ-3
+  const sortedSources = [...relevantSources].sort(
     (a, b) => b.relevanceScore - a.relevanceScore
   );
-
-  // Показываем топ-3 источника
   const topSources = sortedSources.slice(0, 3);
 
   topSources.forEach((source, idx) => {
