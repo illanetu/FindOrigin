@@ -6,6 +6,17 @@ import { compareWithSources, formatAnalysisResponse } from '@/lib/openai';
 // Настройка runtime для Vercel (nodejs для полной поддержки всех API)
 export const runtime = 'nodejs';
 
+// Отключаем body parsing для raw body (если нужно)
+export const dynamic = 'force-dynamic';
+
+/**
+ * OPTIONS /api/webhook
+ * Обработка preflight запросов
+ */
+export async function OPTIONS() {
+  return NextResponse.json({}, { status: 200 });
+}
+
 /**
  * POST /api/webhook
  * Обработчик webhook от Telegram
