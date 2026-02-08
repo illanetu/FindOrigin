@@ -42,9 +42,9 @@ if ($Token) {
     Write-Host ""
 }
 
-# 3. Проверка endpoint через POST запрос
-Write-Host "3. Проверка endpoint /api/webhook..." -ForegroundColor Yellow
-$webhookUrl = "$VercelUrl/api/webhook"
+# 3. Проверка endpoint через POST запрос (сначала /api/telegram — обход 405)
+Write-Host "3. Проверка endpoint /api/telegram (рекомендуемый webhook)..." -ForegroundColor Yellow
+$webhookUrl = "$VercelUrl/api/telegram"
 Write-Host "   URL: $webhookUrl" -ForegroundColor Gray
 
 $testBody = @{
@@ -76,9 +76,12 @@ try {
 Write-Host ""
 
 # 4. Рекомендации
-Write-Host "4. Как протестировать бота:" -ForegroundColor Yellow
+Write-Host "4. Настройка webhook в Telegram (если ещё не настроен):" -ForegroundColor Yellow
+Write-Host "   При 405 на /api/webhook используйте URL: $webhookUrl" -ForegroundColor White
+Write-Host "   Invoke-RestMethod -Uri ""https://api.telegram.org/bot`$token/setWebhook"" -Method Post -Body (@{url=`"$webhookUrl`"} | ConvertTo-Json) -ContentType ""application/json""" -ForegroundColor Gray
+Write-Host "5. Как протестировать бота:" -ForegroundColor Yellow
 Write-Host "   • Откройте Telegram и найдите вашего бота" -ForegroundColor White
-Write-Host "   • Отправьте боту любое текстовое сообщение" -ForegroundColor White
+Write-Host "   • Отправьте боту любое текстовое сообщение (не короче 10 символов)" -ForegroundColor White
 Write-Host "   • Бот должен ответить с результатами поиска источников" -ForegroundColor White
 Write-Host "   • Проверьте логи на Vercel Dashboard -> Deployments -> Logs" -ForegroundColor White
 Write-Host ""

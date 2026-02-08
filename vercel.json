@@ -1,8 +1,7 @@
 {
   "framework": "nextjs",
   "functions": {
-    "pages/api/webhook.ts": {
-      "maxDuration": 60
-    }
+    "pages/api/webhook.ts": { "maxDuration": 60 },
+    "pages/api/telegram.ts": { "maxDuration": 60 }
   }
 }
