@@ -131,11 +131,15 @@ async function processUpdate(update: TelegramUpdate, token: string): Promise<voi
       token
     );
 
-    const searchResults = await searchMultipleCategories(
-      searchQuery,
-      googleApiKey,
-      googleSearchEngineId
-    );
+    // ВРЕМЕННО: поиск Google отключён для проверки (включить обратно — GOOGLE_SEARCH_DISABLED = false)
+    const GOOGLE_SEARCH_DISABLED = true;
+    const searchResults = GOOGLE_SEARCH_DISABLED
+      ? { official: [], news: [], blog: [], research: [] }
+      : await searchMultipleCategories(
+          searchQuery,
+          googleApiKey,
+          googleSearchEngineId
+        );
     const allSources = [
       ...searchResults.official,
       ...searchResults.news,
