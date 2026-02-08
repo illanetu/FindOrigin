@@ -3,6 +3,10 @@ import { TelegramUpdate, sendTelegramMessage, getTelegramPostContent } from '@/l
 import { searchMultipleCategories } from '@/lib/google-search';
 import { compareWithSources, formatAnalysisResponse } from '@/lib/openai';
 
+export const config = {
+  api: { bodyParser: { sizeLimit: '1mb' } },
+};
+
 /**
  * Webhook для Telegram по пути /api/telegram (обход 405 на /api/webhook).
  * GET — проверка, POST — обновления от Telegram.
@@ -26,28 +30,39 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const token = process.env.BOT_TOKEN;
     if (!token) {
-      console.error('BOT_TOKEN не найден в переменных окружения');
+      console.error('[telegram] BOT_TOKEN не найден в переменных окружения');
       return res.status(500).json({ error: 'Bot token not configured' });
     }
 
     const update = req.body as TelegramUpdate;
     if (!update || typeof update !== 'object') {
+      console.error('[telegram] Invalid body:', typeof req.body, req.body);
       return res.status(400).json({ error: 'Invalid request body' });
     }
 
+    console.log('[telegram] Update received:', update.update_id, update.message?.text?.slice(0, 50) ?? '(no text)');
     await processUpdate(update, token);
     return res.status(200).json({ ok: true });
   } catch (error) {
-    console.error('Webhook error:', error);
+    console.error('[telegram] Webhook error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 }
 
 async function processUpdate(update: TelegramUpdate, token: string): Promise<void> {
   const message = update.message || update.edited_message;
-  if (!message || !message.text) return;
+  if (!message) return;
 
   const chatId = message.chat.id;
+  if (!message.text || !message.text.trim()) {
+    await sendTelegramMessage(
+      chatId,
+      '📝 Отправьте текстовое сообщение (не короче 10 символов) — я ищу источники по тексту.',
+      token
+    );
+    return;
+  }
+
   let text = message.text.trim();
 
   const googleApiKey = process.env.GOOGLE_SEARCH_API_KEY;
