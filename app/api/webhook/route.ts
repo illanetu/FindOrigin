@@ -16,6 +16,17 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 /**
+ * GET /api/webhook
+ * Проверка доступности (Telegram шлёт только POST)
+ */
+export async function GET() {
+  return new NextResponse(
+    JSON.stringify({ ok: true, message: 'Webhook endpoint. Telegram sends POST here.' }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } }
+  );
+}
+
+/**
  * OPTIONS /api/webhook
  * Обработка preflight запросов
  */
@@ -24,7 +35,7 @@ export async function OPTIONS() {
     status: 200,
     headers: {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
     },
   });
