@@ -37,7 +37,18 @@ export interface TelegramUpdate {
 }
 
 /**
- * Отправка сообщения через Telegram Bot API
+ * Экранирование спецсимволов Markdown для Telegram (избегаем "can't parse entities").
+ * Экранируем: _ * [ ] ` ( и ) — они ломают разбор, если не закрыты.
+ */
+function escapeMarkdown(text: string): string {
+  return text
+    .replace(/\\/g, '\\\\')
+    .replace(/([_*\[\]`()])/g, '\\$1');
+}
+
+/**
+ * Отправка сообщения через Telegram Bot API.
+ * Текст экранируется для Markdown, чтобы ответы AI и сниппеты не ломали разбор.
  */
 export async function sendTelegramMessage(
   chatId: number,
@@ -45,7 +56,8 @@ export async function sendTelegramMessage(
   token: string
 ): Promise<void> {
   const url = `${TELEGRAM_API_URL}${token}/sendMessage`;
-  
+  const safeText = escapeMarkdown(text);
+
   const response = await fetch(url, {
     method: 'POST',
     headers: {
@@ -53,7 +65,7 @@ export async function sendTelegramMessage(
     },
     body: JSON.stringify({
       chat_id: chatId,
-      text: text,
+      text: safeText,
       parse_mode: 'Markdown',
     }),
   });
