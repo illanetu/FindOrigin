@@ -1,9 +1,3 @@
 {
-  "framework": "nextjs",
-  "rewrites": [
-    {
-      "source": "/api/webhook",
-      "destination": "/api/webhook"
-    }
-  ]
+  "framework": "nextjs"
 }
