@@ -1,3 +1,8 @@
 {
-  "framework": "nextjs"
+  "framework": "nextjs",
+  "functions": {
+    "pages/api/webhook.ts": {
+      "maxDuration": 60
+    }
+  }
 }

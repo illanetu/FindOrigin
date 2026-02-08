@@ -1,107 +1,54 @@
-import { NextRequest, NextResponse } from 'next/server';
+import type { NextApiRequest, NextApiResponse } from 'next';
 import { TelegramUpdate, sendTelegramMessage, getTelegramPostContent } from '@/lib/telegram';
-import { searchSources, searchMultipleCategories } from '@/lib/google-search';
+import { searchMultipleCategories } from '@/lib/google-search';
 import { compareWithSources, formatAnalysisResponse } from '@/lib/openai';
 
-// Настройка runtime для Vercel (nodejs для полной поддержки всех API)
-export const runtime = 'nodejs';
-
-// До 60 сек на Pro — поиск и AI могут занимать время (на Hobby лимит Vercel 10 сек)
-export const maxDuration = 60;
-
-// Принудительно делаем route динамическим
-export const dynamic = 'force-dynamic';
-
-// Отключаем кэширование
-export const revalidate = 0;
-
 /**
- * GET /api/webhook
- * Проверка доступности (Telegram шлёт только POST)
+ * GET — проверка доступности (Telegram шлёт только POST)
  */
-export async function GET() {
-  return new NextResponse(
-    JSON.stringify({ ok: true, message: 'Webhook endpoint. Telegram sends POST here.' }),
-    { status: 200, headers: { 'Content-Type': 'application/json' } }
-  );
-}
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method === 'GET') {
+    return res.status(200).json({ ok: true, message: 'Webhook endpoint. Telegram sends POST here.' });
+  }
 
-/**
- * OPTIONS /api/webhook
- * Обработка preflight запросов
- */
-export async function OPTIONS() {
-  return new NextResponse(null, { 
-    status: 200,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-    },
-  });
-}
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    return res.status(200).end();
+  }
 
-/**
- * POST /api/webhook
- * Обработчик webhook от Telegram
- */
-export async function POST(request: NextRequest) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method Not Allowed' });
+  }
+
   try {
     const token = process.env.BOT_TOKEN;
-    
     if (!token) {
       console.error('BOT_TOKEN не найден в переменных окружения');
-      return NextResponse.json(
-        { error: 'Bot token not configured' },
-        { status: 500 }
-      );
+      return res.status(500).json({ error: 'Bot token not configured' });
     }
 
-    // Быстро возвращаем 200 OK, чтобы Telegram не повторял запрос
-    let update: TelegramUpdate;
-    try {
-      update = await request.json();
-    } catch (parseError) {
-      console.error('Error parsing request body:', parseError);
-      return NextResponse.json(
-        { error: 'Invalid request body' },
-        { status: 400 }
-      );
+    const update = req.body as TelegramUpdate;
+    if (!update || typeof update !== 'object') {
+      return res.status(400).json({ error: 'Invalid request body' });
     }
-    
-    // На Vercel serverless после return функция завершается — фоновая обработка не успевает.
-    // Поэтому ждём завершения обработки, затем возвращаем 200 (Telegram допускает до 60 сек).
+
     await processUpdate(update, token);
-
-    return new NextResponse(JSON.stringify({ ok: true }), {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
+    return res.status(200).json({ ok: true });
   } catch (error) {
     console.error('Webhook error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return res.status(500).json({ error: 'Internal server error' });
   }
 }
 
-/**
- * Асинхронная обработка обновления от Telegram
- */
 async function processUpdate(update: TelegramUpdate, token: string): Promise<void> {
   const message = update.message || update.edited_message;
-  
-  if (!message || !message.text) {
-    return;
-  }
+  if (!message || !message.text) return;
 
   const chatId = message.chat.id;
   let text = message.text.trim();
 
-  // Проверяем наличие необходимых API ключей
   const googleApiKey = process.env.GOOGLE_SEARCH_API_KEY;
   const googleSearchEngineId = process.env.GOOGLE_SEARCH_ENGINE_ID;
   const openaiApiKey = process.env.OPENAI_API_KEY;
@@ -116,10 +63,8 @@ async function processUpdate(update: TelegramUpdate, token: string): Promise<voi
     return;
   }
 
-  // Поддерживаем либо OpenAI, либо OpenRouter
   const aiApiKey = openrouterApiKey || openaiApiKey;
   const useOpenRouter = !!openrouterApiKey;
-
   if (!aiApiKey) {
     await sendTelegramMessage(
       chatId,
@@ -129,17 +74,13 @@ async function processUpdate(update: TelegramUpdate, token: string): Promise<voi
     return;
   }
 
-  // Проверяем, является ли сообщение ссылкой на Telegram-пост
   const telegramLinkPattern = /https?:\/\/t\.me\/[^\s]+/;
   const telegramLink = text.match(telegramLinkPattern)?.[0];
-  
   if (telegramLink) {
-    // Пытаемся извлечь текст из поста
     const postContent = await getTelegramPostContent(telegramLink, token);
     if (postContent) {
       text = postContent;
     } else {
-      // Если не удалось извлечь, отправляем сообщение
       await sendTelegramMessage(
         chatId,
         '⚠️ Получена ссылка на Telegram-пост, но не удалось извлечь его содержимое. Обрабатываю ссылку как обычный текст.',
@@ -157,7 +98,6 @@ async function processUpdate(update: TelegramUpdate, token: string): Promise<voi
     return;
   }
 
-  // Отправляем сообщение о начале обработки
   await sendTelegramMessage(
     chatId,
     '🔍 Ищу источники информации... Это может занять некоторое время.',
@@ -165,14 +105,11 @@ async function processUpdate(update: TelegramUpdate, token: string): Promise<voi
   );
 
   try {
-    // Ищем источники по разным категориям
     const searchResults = await searchMultipleCategories(
       text,
       googleApiKey,
       googleSearchEngineId
     );
-
-    // Объединяем результаты из всех категорий
     const allSources = [
       ...searchResults.official,
       ...searchResults.news,
@@ -189,10 +126,7 @@ async function processUpdate(update: TelegramUpdate, token: string): Promise<voi
       return;
     }
 
-    // Ограничиваем количество источников для анализа (максимум 5)
     const sourcesToAnalyze = allSources.slice(0, 5);
-
-    // Анализируем источники с помощью AI
     await sendTelegramMessage(
       chatId,
       '🤖 Анализирую найденные источники с помощью AI...',
@@ -200,8 +134,6 @@ async function processUpdate(update: TelegramUpdate, token: string): Promise<voi
     );
 
     const analysis = await compareWithSources(text, sourcesToAnalyze, aiApiKey, useOpenRouter);
-
-    // Формируем и отправляем финальный ответ
     const responseText = formatAnalysisResponse(analysis);
     await sendTelegramMessage(chatId, responseText, token);
   } catch (error) {
