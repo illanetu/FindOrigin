@@ -31,14 +31,25 @@ npm run build
    - Для Production, Preview и Development окружений
 3. После добавления переменных пересоберите проект
 
-### 4. API route не отвечает или возвращает 500
+### 4. Ошибка 405 Method Not Allowed на POST /api/webhook
+
+**Частая причина: Deployment Protection (защита деплоя).**
+
+1. Откройте **Vercel Dashboard** → ваш проект **FindOrigin** → **Settings** → **Deployment Protection**.
+2. Для **Production** отключите защиту или выберите вариант, при котором публичные запросы к API не блокируются (например, «Only Preview Deployments» или отключите для Production).
+3. Telegram шлёт POST без авторизации — если включена Vercel Authentication / Password Protection, POST к `/api/webhook` будет получать 405 или 403.
+4. Сохраните настройки и снова проверьте POST (см. README или скрипт проверки).
+
+**Проверка с вашего ПК:** если GET к `https://ваш-проект.vercel.app/api/webhook` возвращает 200, а POST — 405, почти всегда виновата защита деплоя или фаервол проекта.
+
+### 5. API route не отвечает или возвращает 500
 
 **Проверьте:**
 - Переменная `BOT_TOKEN` добавлена в Vercel
-- Runtime указан в `app/api/webhook/route.ts`: `export const runtime = 'nodejs';`
+- Webhook реализован в `pages/api/webhook.ts` (Pages Router)
 - Логи в Vercel Dashboard → Deployments → [ваш деплой] → Functions
 
-### 5. Webhook не получает запросы от Telegram
+### 6. Webhook не получает запросы от Telegram
 
 **Решение:**
 1. Убедитесь, что проект задеплоен и доступен
@@ -60,14 +71,14 @@ Invoke-RestMethod -Uri "https://api.telegram.org/bot$token/setWebhook" -Method P
 Invoke-RestMethod -Uri "https://api.telegram.org/bot$token/getWebhookInfo"
 ```
 
-### 6. Проблемы с типами TypeScript
+### 7. Проблемы с типами TypeScript
 
 **Решение:**
 - Убедитесь, что `tsconfig.json` настроен правильно
 - Проверьте, что все типы импортированы корректно
 - Запустите: `npm run build` для проверки типов
 
-### 7. Проблемы с путями импорта (@/)
+### 8. Проблемы с путями импорта (@/)
 
 **Решение:**
 - Убедитесь, что в `tsconfig.json` есть:
@@ -77,7 +88,7 @@ Invoke-RestMethod -Uri "https://api.telegram.org/bot$token/getWebhookInfo"
 }
 ```
 
-### 8. Функция превышает таймаут
+### 9. Функция превышает таймаут
 
 **Решение:**
 - Убедитесь, что основной ответ (200 OK) отправляется быстро
