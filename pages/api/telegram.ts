@@ -114,18 +114,20 @@ async function processUpdate(update: TelegramUpdate, token: string): Promise<voi
     return;
   }
 
+  // Шаг 1: только AI (openai/gpt-4o-mini) — формирует поисковый запрос
   await sendTelegramMessage(
     chatId,
-    '🤖 AI (gpt-4o-mini) формирует поисковый запрос...',
+    '🤖 AI (openai/gpt-4o-mini) формирует поисковый запрос...',
     token
   );
 
   try {
     const searchQuery = await generateSearchQuery(text, aiApiKey, useOpenRouter);
 
+    // Шаг 2: только потом Google Search
     await sendTelegramMessage(
       chatId,
-      '🔍 Ищу источники информации... Это может занять некоторое время.',
+      '🔍 Ищу источники в Google...',
       token
     );
 
