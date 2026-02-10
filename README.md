@@ -78,14 +78,30 @@ $webhookUrl = "https://your-app.vercel.app/api/webhook"
 Invoke-RestMethod -Uri "https://api.telegram.org/bot$token/setWebhook" -Method Post -Body (@{url=$webhookUrl} | ConvertTo-Json) -ContentType "application/json"
 ```
 
+## Telegram Mini App (TMA)
+
+FindOrigin можно открыть как **Mini App** прямо в Telegram — это веб-интерфейс для поиска источников.
+
+1. После деплоя откройте [@BotFather](https://t.me/BotFather).
+2. Выберите бота → **Bot Settings** → **Menu Button** (или **Configure Mini App**).
+3. Укажите URL Mini App: `https://ваш-домен.vercel.app/tma`.
+4. Пользователи откроют приложение через меню бота или кнопку внизу чата.
+
+Страница Mini App: `/tma` — форма ввода текста, кнопка «Найти источники», вывод топ-3 источников с релевантностью и объяснением. Запросы к бэкенду проходят проверку подписи Telegram (`initData`).
+
 ## Структура проекта
 
-- `app/api/webhook/route.ts` - обработчик webhook от Telegram
-- `lib/telegram.ts` - утилиты для работы с Telegram API
-- `lib/google-search.ts` - поиск источников через Google Custom Search API
-- `lib/openai.ts` - AI-анализ источников с помощью OpenAI (gpt-4o-mini)
-- `lib/webhook-setup.ts` - настройка webhook
-- `scripts/setup-webhook.ts` - скрипт для настройки webhook
+- `pages/api/telegram.ts` — webhook для бота
+- `pages/api/webhook.ts` — альтернативный webhook
+- `pages/api/tma/find-sources.ts` — API для Mini App (поиск по тексту, проверка initData)
+- `pages/tma.tsx` — UI Mini App
+- `lib/telegram.ts` — утилиты для работы с Telegram API
+- `lib/run-find-sources.ts` — общая логика поиска источников (бот + TMA)
+- `lib/tma-auth.ts` — валидация initData Telegram Mini App
+- `lib/google-search.ts` — поиск через Google Custom Search API
+- `lib/openai.ts` — AI-анализ источников (OpenAI/OpenRouter, gpt-4o-mini)
+- `lib/webhook-setup.ts` — настройка webhook
+- `scripts/setup-webhook.ts` — скрипт для настройки webhook
 
 ## Функционал
 
@@ -95,7 +111,8 @@ Invoke-RestMethod -Uri "https://api.telegram.org/bot$token/setWebhook" -Method P
 ✅ AI-анализ источников с помощью OpenAI (gpt-4o-mini)  
 ✅ Семантическое сравнение текста с найденными источниками  
 ✅ Оценка релевантности и уверенности для каждого источника  
-✅ Форматированный ответ с топ-3 источниками
+✅ Форматированный ответ с топ-3 источниками  
+✅ **Telegram Mini App** — веб-интерфейс в Telegram с той же логикой поиска
 
 ## Как это работает
 

@@ -1,10 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { TelegramUpdate, sendTelegramMessage, getTelegramPostContent } from '@/lib/telegram';
-import { searchMultipleCategories } from '@/lib/google-search';
-import { searchWithBrave } from '@/lib/brave-search';
-import { searchWithWikipedia } from '@/lib/wikipedia-search';
-import { searchWithSearch1API } from '@/lib/search1api-search';
-import { generateSearchQuery, compareWithSources, formatAnalysisResponse } from '@/lib/openai';
+import { TelegramUpdate, sendTelegramMessage } from '@/lib/telegram';
+import { formatAnalysisResponse } from '@/lib/openai';
+import { runFindSources } from '@/lib/run-find-sources';
 
 export const config = {
   api: { bodyParser: { sizeLimit: '1mb' } },
@@ -66,122 +63,30 @@ async function processUpdate(update: TelegramUpdate, token: string): Promise<voi
     return;
   }
 
-  let text = message.text.trim();
-
-  const search1ApiKey = process.env.SEARCH1API_KEY;
-  const googleApiKey = process.env.GOOGLE_SEARCH_API_KEY;
-  const googleSearchEngineId = process.env.GOOGLE_SEARCH_ENGINE_ID;
-  const braveApiKey = process.env.BRAVE_API_KEY;
-  const openaiApiKey = process.env.OPENAI_API_KEY;
-  const openrouterApiKey = process.env.OPENROUTER_API_KEY;
-
-  const useSearch1API = !!search1ApiKey;
-  const GOOGLE_SEARCH_DISABLED = true; // Временно отключить Google (включить: false)
-  const useGoogleSearch = !!googleApiKey && !!googleSearchEngineId && !GOOGLE_SEARCH_DISABLED;
-  const useBraveSearch = !!braveApiKey;
-  // Если ни один ключ не задан — используется Википедия (без ключа, работает в РФ)
-
-  const aiApiKey = openrouterApiKey || openaiApiKey;
-  const useOpenRouter = !!openrouterApiKey;
-  if (!aiApiKey) {
-    await sendTelegramMessage(
-      chatId,
-      '❌ Ошибка: AI API не настроен. Проверьте переменную окружения OPENAI_API_KEY или OPENROUTER_API_KEY.',
-      token
-    );
-    return;
-  }
-
-  const telegramLinkPattern = /https?:\/\/t\.me\/[^\s]+/;
-  const telegramLink = text.match(telegramLinkPattern)?.[0];
-  if (telegramLink) {
-    const postContent = await getTelegramPostContent(telegramLink, token);
-    if (postContent) {
-      text = postContent;
-    } else {
-      await sendTelegramMessage(
-        chatId,
-        '⚠️ Получена ссылка на Telegram-пост, но не удалось извлечь его содержимое. Обрабатываю ссылку как обычный текст.',
-        token
-      );
-    }
-  }
-
-  if (!text || text.length < 10) {
-    await sendTelegramMessage(
-      chatId,
-      '❌ Текст слишком короткий для анализа. Пожалуйста, отправьте более подробное сообщение.',
-      token
-    );
-    return;
-  }
-
-  // Шаг 1: только AI (openai/gpt-4o-mini) — формирует поисковый запрос
-  await sendTelegramMessage(
-    chatId,
-    '🤖 AI (openai/gpt-4o-mini) формирует поисковый запрос...',
-    token
-  );
+  const text = message.text.trim();
 
   try {
-    const searchQuery = await generateSearchQuery(text, aiApiKey, useOpenRouter);
-
-    // Шаг 2: поиск — сначала всегда Википедия, затем при наличии ключа — другой провайдер
-    await sendTelegramMessage(chatId, '🔍 Ищу источники в Википедии...', token);
-    const wikiResults = await searchWithWikipedia(searchQuery, 5);
-    let allSources = [
-      ...wikiResults.official,
-      ...wikiResults.news,
-      ...wikiResults.blog,
-      ...wikiResults.research,
-    ];
-
-    if (useSearch1API || useGoogleSearch || useBraveSearch) {
-      if (useSearch1API) {
-        await sendTelegramMessage(chatId, '🔍 Ищу также в DuckDuckGo...', token);
-        const other = await searchWithSearch1API(searchQuery, search1ApiKey!, 5);
-        allSources = [...allSources, ...other.news, ...other.blog, ...other.research];
-      } else if (useGoogleSearch) {
-        await sendTelegramMessage(chatId, '🔍 Ищу также в Google...', token);
-        const other = await searchMultipleCategories(searchQuery, googleApiKey!, googleSearchEngineId!);
-        allSources = [...allSources, ...other.news, ...other.blog, ...other.research];
-      } else {
-        await sendTelegramMessage(chatId, '🔍 Ищу также в Brave Search...', token);
-        const other = await searchWithBrave(searchQuery, braveApiKey!, 5);
-        allSources = [...allSources, ...other.news, ...other.blog, ...other.research];
-      }
-    }
-
-    if (allSources.length === 0) {
-      await sendTelegramMessage(
-        chatId,
-        '❌ Источники не найдены. Попробуйте переформулировать запрос.',
-        token
-      );
-      return;
-    }
-
-    const sourcesToAnalyze = allSources.slice(0, 5);
-    await sendTelegramMessage(
-      chatId,
-      '🤖 Анализирую найденные источники с помощью AI (gpt-4o-mini)...',
-      token
-    );
-
-    const analysis = await compareWithSources(text, sourcesToAnalyze, aiApiKey, useOpenRouter);
+    const analysis = await runFindSources(text, {
+      botToken: token,
+      sendStatus: (msg) => sendTelegramMessage(chatId, msg, token),
+    });
     const responseText = formatAnalysisResponse(analysis);
     await sendTelegramMessage(chatId, responseText, token);
   } catch (error) {
     console.error('Error processing update:', error);
     const errMsg = error instanceof Error ? error.message : String(error);
-    let userMsg = '❌ Произошла ошибка при поиске или анализе источников. Попробуйте позже.';
+    const isKnownError =
+      errMsg.includes('AI API') || errMsg.includes('короткий') || errMsg.includes('Источники не найдены');
+    let userMsg = isKnownError
+      ? '❌ ' + errMsg
+      : '❌ Произошла ошибка при поиске или анализе источников. Попробуйте позже.';
     if (/Google Search API|Brave Search API|Search1API|Wikipedia API|customsearch|403|401|invalid|quota|API key/i.test(errMsg)) {
-      if (useSearch1API) userMsg += '\n\n💡 Поиск (Search1API/DuckDuckGo): проверьте SEARCH1API_KEY в Vercel. Ключ: search1api.com';
-      else if (useGoogleSearch) userMsg += '\n\n💡 Поиск (Google): проверьте GOOGLE_SEARCH_API_KEY и GOOGLE_SEARCH_ENGINE_ID в Vercel.';
-      else if (useBraveSearch) userMsg += '\n\n💡 Поиск (Brave): проверьте BRAVE_API_KEY в Vercel. В РФ Brave может быть недоступен.';
+      if (errMsg.includes('Search1API')) userMsg += '\n\n💡 Поиск (Search1API/DuckDuckGo): проверьте SEARCH1API_KEY в Vercel.';
+      else if (errMsg.includes('Google')) userMsg += '\n\n💡 Поиск (Google): проверьте GOOGLE_SEARCH_API_KEY и GOOGLE_SEARCH_ENGINE_ID в Vercel.';
+      else if (errMsg.includes('Brave')) userMsg += '\n\n💡 Поиск (Brave): проверьте BRAVE_API_KEY в Vercel.';
       else userMsg += '\n\n💡 Поиск (Википедия): ошибка сети или Википедия недоступна.';
     } else if (/openai|openrouter|gpt|rate limit|insufficient_quota/i.test(errMsg)) {
-      userMsg += '\n\n💡 AI (OpenRouter/OpenAI): проверьте OPENROUTER_API_KEY или OPENAI_API_KEY в Vercel. Модель: openai/gpt-4o-mini.';
+      userMsg += '\n\n💡 AI (OpenRouter/OpenAI): проверьте OPENROUTER_API_KEY или OPENAI_API_KEY в Vercel.';
     }
     await sendTelegramMessage(chatId, userMsg, token);
   }
