@@ -53,25 +53,25 @@ export function validateInitData(
   if (isNaN(authTimestamp)) return false;
   if (Date.now() / 1000 - authTimestamp > maxAgeSeconds) return false;
 
-  const tryValidate = (dataCheckString: string) => {
+  const dataCheckStringRaw = buildDataCheckString(initDataTrimmed);
+
+  const tryValidate = (secret: string | Buffer, dataCheckString: string) => {
     const computed = crypto
-      .createHmac('sha256', secretKey)
+      .createHmac('sha256', secret)
       .update(dataCheckString)
       .digest('hex');
     return computed === hash;
   };
 
   // Вариант 1: официальная формулировка — secret_key = bot_token (один шаг)
-  let secretKey = token;
-  const dataCheckStringRaw = buildDataCheckString(initDataTrimmed);
-  if (dataCheckStringRaw && tryValidate(dataCheckStringRaw)) return true;
+  if (dataCheckStringRaw && tryValidate(token, dataCheckStringRaw)) return true;
 
   // Вариант 2: secret_key = HMAC("WebAppData", bot_token), затем hash = HMAC(secret_key, data_check_string)
-  secretKey = crypto
+  const secretKeyDerived = crypto
     .createHmac('sha256', WEBAPP_DATA_SECRET)
     .update(token)
     .digest();
-  if (dataCheckStringRaw && tryValidate(dataCheckStringRaw)) return true;
+  if (dataCheckStringRaw && tryValidate(secretKeyDerived, dataCheckStringRaw)) return true;
 
   // Вариант 3: data_check_string из декодированных параметров (сырая строка не подошла)
   params.delete('hash');
@@ -79,7 +79,7 @@ export function validateInitData(
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([k, v]) => `${k}=${v}`)
     .join('\n');
-  if (dataCheckStringDecoded && tryValidate(dataCheckStringDecoded)) return true;
+  if (dataCheckStringDecoded && tryValidate(secretKeyDerived, dataCheckStringDecoded)) return true;
 
   return false;
 }
